@@ -10,7 +10,7 @@ const generateToken = (id) => {
 
 export const register = async (req, res) => {
   try {
-    const { username, email, password, role, avatar } = req.body;
+    const { username, email, password, avatar } = req.body;
 
     const userExists = await User.findOne({ $or: [{ email }, { username }] });
     if (userExists) {
@@ -24,7 +24,7 @@ export const register = async (req, res) => {
       username,
       email,
       password: hashedPassword,
-      role: role || 'customer',
+      role: 'customer',
       avatar: avatar || '',
       isOnline: false,
     });
@@ -92,7 +92,6 @@ export const updateProfile = async (req, res) => {
       user.username = req.body.username || user.username;
       user.email = req.body.email || user.email;
       user.avatar = req.body.avatar || user.avatar;
-      user.role = req.body.role || user.role; // Allow role changing for easy testing!
 
       if (req.body.password) {
         const salt = await bcrypt.genSalt(10);
@@ -121,6 +120,40 @@ export const getUsers = async (req, res) => {
   try {
     const users = await User.find({ _id: { $ne: req.user._id } }).select('-password');
     res.json(users);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const updateUserRole = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { role } = req.body;
+
+    const allowedRoles = ['admin', 'agent', 'customer', 'designer', 'merchant'];
+    if (!role || !allowedRoles.includes(role)) {
+      return res.status(400).json({ message: 'Invalid role value' });
+    }
+
+    const user = await User.findById(id);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    user.role = role;
+    const updatedUser = await user.save();
+
+    res.json({
+      _id: updatedUser._id,
+      username: updatedUser.username,
+      email: updatedUser.email,
+      role: updatedUser.role,
+      avatar: updatedUser.avatar,
+      isOnline: updatedUser.isOnline,
+      lastActive: updatedUser.lastActive,
+      createdAt: updatedUser.createdAt,
+      updatedAt: updatedUser.updatedAt,
+    });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

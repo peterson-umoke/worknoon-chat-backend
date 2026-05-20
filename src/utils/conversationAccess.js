@@ -1,3 +1,5 @@
+import User from '../models/User.js';
+
 const supportRolesByType = {
   'customer-to-agent': ['agent'],
   'customer-to-designer': ['designer'],
@@ -25,8 +27,38 @@ export const isSupportRoleForConversation = (user, conversation) => {
   return (supportRolesByType[conversation.type] || []).includes(user.role);
 };
 
-export const canAccessConversation = (conversation, user) =>
-  isConversationParticipant(conversation, user._id) || isSupportRoleForConversation(user, conversation);
+export const getCustomerParticipantIds = async () => {
+  const customers = await User.find({ role: 'customer' }).select('_id');
+  return customers.map((customer) => customer._id);
+};
+
+const hasPopulatedCustomerParticipant = (conversation) =>
+  conversation.participants.some((participant) => participant?.role === 'customer');
+
+export const hasCustomerParticipant = async (conversation) => {
+  if (hasPopulatedCustomerParticipant(conversation)) {
+    return true;
+  }
+
+  const customer = await User.exists({
+    _id: { $in: conversation.participants },
+    role: 'customer',
+  });
+
+  return Boolean(customer);
+};
+
+export const canAccessConversation = async (conversation, user) => {
+  if (isConversationParticipant(conversation, user._id)) {
+    return true;
+  }
+
+  if (!isSupportRoleForConversation(user, conversation)) {
+    return false;
+  }
+
+  return hasCustomerParticipant(conversation);
+};
 
 export const ensureConversationParticipant = (conversation, userId) => {
   if (isConversationParticipant(conversation, userId)) {

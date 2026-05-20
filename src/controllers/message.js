@@ -21,7 +21,7 @@ export const sendMessage = async (req, res) => {
       return res.status(404).json({ message: 'Conversation not found' });
     }
 
-    if (!canAccessConversation(conversation, req.user)) {
+    if (!(await canAccessConversation(conversation, req.user))) {
       return res.status(403).json({ message: 'Not authorized to send messages in this conversation' });
     }
 
@@ -88,7 +88,7 @@ export const getMessages = async (req, res) => {
       return res.status(404).json({ message: 'Conversation not found' });
     }
 
-    if (!canAccessConversation(conversation, req.user)) {
+    if (!(await canAccessConversation(conversation, req.user))) {
       return res.status(403).json({ message: 'Not authorized to access messages' });
     }
 
@@ -112,7 +112,7 @@ export const markAsRead = async (req, res) => {
       return res.status(404).json({ message: 'Conversation not found' });
     }
 
-    if (!canAccessConversation(conversation, req.user)) {
+    if (!(await canAccessConversation(conversation, req.user))) {
       return res.status(403).json({ message: 'Not authorized to access messages' });
     }
 

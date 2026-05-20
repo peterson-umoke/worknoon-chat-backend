@@ -3,6 +3,7 @@ import Message from '../models/Message.js';
 import User from '../models/User.js';
 import {
   canAccessConversation,
+  getCustomerParticipantIds,
   getSupportedConversationTypesForRole,
   isConversationParticipant,
 } from '../utils/conversationAccess.js';
@@ -118,11 +119,17 @@ export const getConversations = async (req, res) => {
   try {
     const currentUserId = req.user._id;
     const supportedTypes = getSupportedConversationTypesForRole(req.user.role);
+    const customerParticipantIds = supportedTypes.length > 0
+      ? await getCustomerParticipantIds()
+      : [];
     const query = supportedTypes.length > 0
       ? {
           $or: [
             { participants: currentUserId },
-            { type: { $in: supportedTypes } },
+            {
+              type: { $in: supportedTypes },
+              participants: { $in: customerParticipantIds },
+            },
           ],
         }
       : { participants: currentUserId };
@@ -154,7 +161,7 @@ export const getConversationById = async (req, res) => {
       return res.status(404).json({ message: 'Conversation not found' });
     }
 
-    if (!canAccessConversation(conversation, req.user)) {
+    if (!(await canAccessConversation(conversation, req.user))) {
       return res.status(403).json({ message: 'Not authorized to access this conversation' });
     }
 

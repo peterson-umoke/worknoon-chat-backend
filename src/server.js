@@ -175,7 +175,7 @@ io.on('connection', async (socket) => {
     try {
       const { conversationId, content, fileType } = data;
       const conversation = await Conversation.findById(conversationId);
-      if (!conversation || !canAccessConversation(conversation, socket.user)) {
+      if (!conversation || !(await canAccessConversation(conversation, socket.user))) {
         socket.emit('error', { message: 'Not authorized to send messages in this conversation' });
         return;
       }

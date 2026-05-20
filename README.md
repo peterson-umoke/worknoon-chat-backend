@@ -68,7 +68,7 @@ docker compose up -d
 npm run dev
 ```
 
-The server runs on `http://localhost:5000`.
+The server runs on `http://localhost:3001`.
 
 ### Default Test Accounts
 

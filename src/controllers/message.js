@@ -28,7 +28,7 @@ export const sendMessage = async (req, res) => {
 
     // Update conversation metadata
     conversation.lastMessage = message._id;
-    
+
     // Increment unreadCount for all OTHER participants
     conversation.participants.forEach((participantId) => {
       if (participantId.toString() !== senderId.toString()) {
@@ -41,6 +41,25 @@ export const sendMessage = async (req, res) => {
 
     const populatedMessage = await Message.findById(message._id)
       .populate('sender', 'username email avatar role');
+
+    const io = req.app.get('io');
+    const onlineUsers = req.app.get('onlineUsers');
+
+    if (io && onlineUsers && conversation) {
+      conversation.participants.forEach((participantId) => {
+        const targetUserId = participantId.toString();
+        if (targetUserId === senderId.toString()) return;
+
+        const targetSocketId = onlineUsers.get(targetUserId);
+        if (!targetSocketId) return;
+
+        io.to(targetSocketId).emit('messageReceived', populatedMessage);
+        io.to(targetSocketId).emit('conversationUpdated', {
+          conversationId,
+          lastMessage: populatedMessage,
+        });
+      });
+    }
 
     res.status(201).json(populatedMessage);
   } catch (error) {
@@ -92,6 +111,23 @@ export const markAsRead = async (req, res) => {
       { conversationId, sender: { $ne: currentUserId }, isRead: false },
       { $set: { isRead: true } }
     );
+
+    const io = req.app.get('io');
+    const onlineUsers = req.app.get('onlineUsers');
+    if (io && onlineUsers && conversation) {
+      conversation.participants.forEach((participantId) => {
+        const targetUserId = participantId.toString();
+        if (targetUserId === currentUserId.toString()) return;
+
+        const targetSocketId = onlineUsers.get(targetUserId);
+        if (!targetSocketId) return;
+
+        io.to(targetSocketId).emit('messagesRead', {
+          conversationId,
+          readerId: currentUserId.toString(),
+        });
+      });
+    }
 
     res.json({ message: 'Messages marked as read' });
   } catch (error) {

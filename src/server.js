@@ -88,7 +88,7 @@ io.use(async (socket, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'supersecretworknoonjwtkey123!');
     const user = await User.findById(decoded.id).select('-password');
-    
+
     if (!user) {
       return next(new Error('Authentication error: User not found'));
     }
@@ -101,6 +101,8 @@ io.use(async (socket, next) => {
 });
 
 const onlineUsers = new Map();
+app.set('io', io);
+app.set('onlineUsers', onlineUsers);
 
 io.on('connection', async (socket) => {
   const userId = socket.user._id.toString();
@@ -110,7 +112,7 @@ io.on('connection', async (socket) => {
   socket.emit('onlineUsersSnapshot', {
     userIds: Array.from(onlineUsers.keys()),
   });
-  
+
   console.log(`User connected: ${socket.user.username} (${socket.user.role})`);
 
   await User.findByIdAndUpdate(userId, { isOnline: true, lastActive: new Date() });
@@ -152,7 +154,7 @@ io.on('connection', async (socket) => {
         .populate('sender', 'username email avatar role');
 
       io.to(conversationId).emit('messageReceived', populatedMessage);
-      
+
       if (conversation) {
         conversation.participants.forEach((pId) => {
           const targetUserId = pId.toString();

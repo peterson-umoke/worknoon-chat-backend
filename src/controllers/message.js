@@ -1,5 +1,14 @@
 import Message from '../models/Message.js';
 import Conversation from '../models/Conversation.js';
+import {
+  canAccessConversation,
+  ensureConversationParticipant,
+} from '../utils/conversationAccess.js';
+import {
+  emitConversationMessage,
+  emitConversationUpdated,
+  getOnlineSocketIdsForUser,
+} from '../utils/socketDelivery.js';
 
 export const sendMessage = async (req, res) => {
   try {
@@ -12,10 +21,11 @@ export const sendMessage = async (req, res) => {
       return res.status(404).json({ message: 'Conversation not found' });
     }
 
-    // Check if sender is a participant
-    if (!conversation.participants.some(p => p.toString() === senderId.toString())) {
+    if (!canAccessConversation(conversation, req.user)) {
       return res.status(403).json({ message: 'Not authorized to send messages in this conversation' });
     }
+
+    ensureConversationParticipant(conversation, senderId);
 
     // Create the message
     const message = await Message.create({
@@ -45,21 +55,21 @@ export const sendMessage = async (req, res) => {
     const io = req.app.get('io');
     const onlineUsers = req.app.get('onlineUsers');
 
-    if (io && onlineUsers && conversation) {
-      conversation.participants.forEach((participantId) => {
-        const targetUserId = participantId.toString();
-        if (targetUserId === senderId.toString()) return;
-
-        const targetSocketId = onlineUsers.get(targetUserId);
-        if (!targetSocketId) return;
-
-        io.to(targetSocketId).emit('messageReceived', populatedMessage);
-        io.to(targetSocketId).emit('conversationUpdated', {
-          conversationId,
-          lastMessage: populatedMessage,
-        });
-      });
-    }
+    emitConversationMessage({
+      io,
+      onlineUsers,
+      conversation,
+      conversationId,
+      message: populatedMessage,
+    });
+    emitConversationUpdated({
+      io,
+      onlineUsers,
+      conversation,
+      conversationId,
+      lastMessage: populatedMessage,
+      excludeUserId: senderId,
+    });
 
     res.status(201).json(populatedMessage);
   } catch (error) {
@@ -78,7 +88,7 @@ export const getMessages = async (req, res) => {
       return res.status(404).json({ message: 'Conversation not found' });
     }
 
-    if (!conversation.participants.some(p => p.toString() === currentUserId.toString())) {
+    if (!canAccessConversation(conversation, req.user)) {
       return res.status(403).json({ message: 'Not authorized to access messages' });
     }
 
@@ -102,6 +112,12 @@ export const markAsRead = async (req, res) => {
       return res.status(404).json({ message: 'Conversation not found' });
     }
 
+    if (!canAccessConversation(conversation, req.user)) {
+      return res.status(403).json({ message: 'Not authorized to access messages' });
+    }
+
+    ensureConversationParticipant(conversation, currentUserId);
+
     // Reset unread count for current user
     conversation.unreadCount.set(currentUserId.toString(), 0);
     await conversation.save();
@@ -119,12 +135,11 @@ export const markAsRead = async (req, res) => {
         const targetUserId = participantId.toString();
         if (targetUserId === currentUserId.toString()) return;
 
-        const targetSocketId = onlineUsers.get(targetUserId);
-        if (!targetSocketId) return;
-
-        io.to(targetSocketId).emit('messagesRead', {
-          conversationId,
-          readerId: currentUserId.toString(),
+        getOnlineSocketIdsForUser(onlineUsers, targetUserId).forEach((socketId) => {
+          io.to(socketId).emit('messagesRead', {
+            conversationId,
+            readerId: currentUserId.toString(),
+          });
         });
       });
     }

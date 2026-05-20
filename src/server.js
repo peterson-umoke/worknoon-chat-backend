@@ -12,6 +12,14 @@ import connectDB from './config/db.js';
 import User from './models/User.js';
 import Message from './models/Message.js';
 import Conversation from './models/Conversation.js';
+import {
+  canAccessConversation,
+  ensureConversationParticipant,
+} from './utils/conversationAccess.js';
+import {
+  emitConversationMessage,
+  emitConversationUpdated,
+} from './utils/socketDelivery.js';
 
 import authRoutes from './routes/auth.js';
 import conversationRoutes from './routes/conversation.js';
@@ -116,9 +124,32 @@ const onlineUsers = new Map();
 app.set('io', io);
 app.set('onlineUsers', onlineUsers);
 
+const addOnlineSocket = (userId, socketId) => {
+  const existingSockets = onlineUsers.get(userId) || new Set();
+  const wasOffline = existingSockets.size === 0;
+  existingSockets.add(socketId);
+  onlineUsers.set(userId, existingSockets);
+  return wasOffline;
+};
+
+const removeOnlineSocket = (userId, socketId) => {
+  const existingSockets = onlineUsers.get(userId);
+  if (!existingSockets) {
+    return true;
+  }
+
+  existingSockets.delete(socketId);
+  if (existingSockets.size === 0) {
+    onlineUsers.delete(userId);
+    return true;
+  }
+
+  return false;
+};
+
 io.on('connection', async (socket) => {
   const userId = socket.user._id.toString();
-  onlineUsers.set(userId, socket.id);
+  const wasOffline = addOnlineSocket(userId, socket.id);
 
   // Send current online users immediately so new clients don't render stale offline states.
   socket.emit('onlineUsersSnapshot', {
@@ -128,7 +159,9 @@ io.on('connection', async (socket) => {
   console.log(`User connected: ${socket.user.username} (${socket.user.role})`);
 
   await User.findByIdAndUpdate(userId, { isOnline: true, lastActive: new Date() });
-  io.emit('userPresence', { userId, isOnline: true });
+  if (wasOffline) {
+    io.emit('userPresence', { userId, isOnline: true });
+  }
 
   socket.on('joinRoom', (conversationId) => {
     socket.join(conversationId);
@@ -141,6 +174,13 @@ io.on('connection', async (socket) => {
   socket.on('sendMessage', async (data) => {
     try {
       const { conversationId, content, fileType } = data;
+      const conversation = await Conversation.findById(conversationId);
+      if (!conversation || !canAccessConversation(conversation, socket.user)) {
+        socket.emit('error', { message: 'Not authorized to send messages in this conversation' });
+        return;
+      }
+
+      ensureConversationParticipant(conversation, socket.user._id);
 
       const message = await Message.create({
         conversationId,
@@ -150,7 +190,6 @@ io.on('connection', async (socket) => {
         isRead: false,
       });
 
-      const conversation = await Conversation.findById(conversationId);
       if (conversation) {
         conversation.lastMessage = message._id;
         conversation.participants.forEach((pId) => {
@@ -165,22 +204,22 @@ io.on('connection', async (socket) => {
       const populatedMessage = await Message.findById(message._id)
         .populate('sender', 'username email avatar role');
 
-      io.to(conversationId).emit('messageReceived', populatedMessage);
-
-      if (conversation) {
-        conversation.participants.forEach((pId) => {
-          const targetUserId = pId.toString();
-          if (targetUserId !== socket.user._id.toString()) {
-            const targetSocketId = onlineUsers.get(targetUserId);
-            if (targetSocketId) {
-              io.to(targetSocketId).emit('conversationUpdated', {
-                conversationId,
-                lastMessage: populatedMessage,
-              });
-            }
-          }
-        });
-      }
+      emitConversationMessage({
+        io,
+        onlineUsers,
+        conversation,
+        conversationId,
+        message: populatedMessage,
+        senderSocket: socket,
+      });
+      emitConversationUpdated({
+        io,
+        onlineUsers,
+        conversation,
+        conversationId,
+        lastMessage: populatedMessage,
+        excludeUserId: socket.user._id,
+      });
     } catch (error) {
       console.error('Socket sendMessage error:', error);
       socket.emit('error', { message: 'Failed to process message' });
@@ -206,9 +245,11 @@ io.on('connection', async (socket) => {
   });
 
   socket.on('disconnect', async () => {
-    onlineUsers.delete(userId);
-    await User.findByIdAndUpdate(userId, { isOnline: false, lastActive: new Date() });
-    io.emit('userPresence', { userId, isOnline: false });
+    const isFullyOffline = removeOnlineSocket(userId, socket.id);
+    if (isFullyOffline) {
+      await User.findByIdAndUpdate(userId, { isOnline: false, lastActive: new Date() });
+      io.emit('userPresence', { userId, isOnline: false });
+    }
   });
 });
 

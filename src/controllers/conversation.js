@@ -1,6 +1,11 @@
 import Conversation from '../models/Conversation.js';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
+import {
+  canAccessConversation,
+  getSupportedConversationTypesForRole,
+  isConversationParticipant,
+} from '../utils/conversationAccess.js';
 
 const conversationTypes = ['customer-to-agent', 'customer-to-designer', 'customer-to-merchant', 'general'];
 
@@ -112,10 +117,17 @@ export const createConversation = async (req, res) => {
 export const getConversations = async (req, res) => {
   try {
     const currentUserId = req.user._id;
+    const supportedTypes = getSupportedConversationTypesForRole(req.user.role);
+    const query = supportedTypes.length > 0
+      ? {
+          $or: [
+            { participants: currentUserId },
+            { type: { $in: supportedTypes } },
+          ],
+        }
+      : { participants: currentUserId };
 
-    const conversations = await Conversation.find({
-      participants: currentUserId,
-    })
+    const conversations = await Conversation.find(query)
       .populate('participants', '-password')
       .populate({
         path: 'lastMessage',
@@ -142,8 +154,7 @@ export const getConversationById = async (req, res) => {
       return res.status(404).json({ message: 'Conversation not found' });
     }
 
-    // Check if the user is a participant
-    if (!conversation.participants.some(p => p._id.toString() === req.user._id.toString())) {
+    if (!canAccessConversation(conversation, req.user)) {
       return res.status(403).json({ message: 'Not authorized to access this conversation' });
     }
 
@@ -161,7 +172,7 @@ export const deleteConversation = async (req, res) => {
       return res.status(404).json({ message: 'Conversation not found' });
     }
 
-    if (!conversation.participants.some(p => p.toString() === req.user._id.toString())) {
+    if (!isConversationParticipant(conversation, req.user._id)) {
       return res.status(403).json({ message: 'Not authorized to delete this conversation' });
     }
 

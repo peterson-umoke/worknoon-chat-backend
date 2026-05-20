@@ -22,17 +22,29 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+const configuredOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+  process.env.WORDPRESS_URL,
+  ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : []),
+].filter(Boolean).map((origin) => origin.trim());
+
+const corsOrigin = (origin, callback) => {
+  if (!origin || configuredOrigins.includes(origin) || /^https?:\/\/localhost:\d+$/.test(origin)) {
+    return callback(null, true);
+  }
+  return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+};
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: corsOrigin,
     methods: ['GET', 'POST'],
     credentials: true,
   },
 });
 
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: corsOrigin,
   credentials: true,
 }));
 app.use(express.json());

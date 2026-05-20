@@ -2,14 +2,63 @@ import Conversation from '../models/Conversation.js';
 import Message from '../models/Message.js';
 import User from '../models/User.js';
 
+const conversationTypes = ['customer-to-agent', 'customer-to-designer', 'customer-to-merchant', 'general'];
+
+const targetRoleByType = {
+  'customer-to-agent': 'agent',
+  'customer-to-designer': 'designer',
+  'customer-to-merchant': 'merchant',
+  general: 'agent',
+};
+
+const normalizeContext = (context = {}) => ({
+  productId: context.productId || '',
+  productName: context.productName || '',
+  productImage: context.productImage || '',
+  productPrice: context.productPrice || '',
+  orderId: context.orderId || '',
+});
+
+const resolveRoleParticipant = async (type, currentUserId) => {
+  const preferredRole = targetRoleByType[type] || 'agent';
+  const findByRole = (role) => User.findOne({
+    _id: { $ne: currentUserId },
+    role,
+  })
+    .sort({ isOnline: -1, lastActive: -1, createdAt: 1 })
+    .select('_id');
+
+  const preferredUser = await findByRole(preferredRole);
+  if (preferredUser || preferredRole === 'agent') {
+    return preferredUser;
+  }
+
+  return findByRole('agent');
+};
+
 export const createConversation = async (req, res) => {
   try {
-    const { participantIds, type, context } = req.body;
+    const { participantIds = [], type = 'general', context } = req.body;
     const currentUserId = req.user._id;
+    const normalizedType = conversationTypes.includes(type) ? type : null;
+
+    if (!normalizedType) {
+      return res.status(400).json({ message: 'Invalid conversation type' });
+    }
+
+    let requestedParticipantIds = Array.isArray(participantIds) ? participantIds : [];
+
+    if (requestedParticipantIds.length === 0) {
+      const assignedUser = await resolveRoleParticipant(normalizedType, currentUserId);
+      if (!assignedUser) {
+        return res.status(404).json({ message: 'No available chat recipient found' });
+      }
+      requestedParticipantIds = [assignedUser._id.toString()];
+    }
 
     // Build the unique list of participants including the creator
     const participants = Array.from(
-      new Set([currentUserId.toString(), ...participantIds.map(id => id.toString())])
+      new Set([currentUserId.toString(), ...requestedParticipantIds.map(id => id.toString())])
     );
 
     if (participants.length < 2) {
@@ -33,9 +82,7 @@ export const createConversation = async (req, res) => {
             productPrice: context.productPrice || existing.context.productPrice,
             orderId: context.orderId || existing.context.orderId,
           };
-          if (type) {
-            existing.type = type;
-          }
+          existing.type = normalizedType;
           await existing.save();
         }
         return res.json(existing);
@@ -45,14 +92,8 @@ export const createConversation = async (req, res) => {
     // Otherwise, create a new conversation
     const conversation = await Conversation.create({
       participants,
-      type: type || 'general',
-      context: context || {
-        productId: '',
-        productName: '',
-        productImage: '',
-        productPrice: '',
-        orderId: '',
-      },
+      type: normalizedType,
+      context: normalizeContext(context),
       unreadCount: participants.reduce((acc, userId) => {
         acc[userId] = 0;
         return acc;

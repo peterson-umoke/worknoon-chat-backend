@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   register,
+  wordpressSync,
   login,
   getProfile,
   updateProfile,
@@ -12,6 +13,7 @@ import { protect, roleCheck } from '../middleware/auth.js';
 const router = express.Router();
 
 router.post('/register', register);
+router.post('/wordpress-sync', wordpressSync);
 router.post('/login', login);
 router.route('/profile')
   .get(protect, getProfile)

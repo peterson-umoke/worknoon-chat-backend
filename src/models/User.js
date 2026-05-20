@@ -28,6 +28,11 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    wordpressUserId: {
+      type: String,
+      default: '',
+      index: true,
+    },
     isOnline: {
       type: Boolean,
       default: false,

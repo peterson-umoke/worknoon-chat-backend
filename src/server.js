@@ -29,7 +29,7 @@ const configuredOrigins = [
 ].filter(Boolean).map((origin) => origin.trim());
 
 const corsOrigin = (origin, callback) => {
-  if (!origin || configuredOrigins.includes(origin) || /^https?:\/\/localhost:\d+$/.test(origin)) {
+  if (!origin || configuredOrigins.includes(origin) || /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
     return callback(null, true);
   }
   return callback(new Error(`Origin ${origin} is not allowed by CORS`));

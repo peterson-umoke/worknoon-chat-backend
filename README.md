@@ -120,4 +120,11 @@ Connect with `{ auth: { token: "<jwt>" } }`.
 
 ## Demo
 
-[Demo video walkthrough](#) — *Add your Loom/YouTube link here*
+> **Video walkthrough coming soon.** Record a 5-10 minute Loom/YouTube video covering:
+> 1. Starting MongoDB + the server
+> 2. Registering a user via `POST /api/auth/register`
+> 3. Logging in and fetching conversations
+> 4. Real-time messaging with Socket.IO
+> 5. Admin-only endpoints
+>
+> Replace this block with: `[📺 Demo Video](https://your-link-here)`

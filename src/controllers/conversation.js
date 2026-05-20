@@ -1,4 +1,5 @@
 import Conversation from '../models/Conversation.js';
+import Message from '../models/Message.js';
 import User from '../models/User.js';
 
 export const createConversation = async (req, res) => {
@@ -123,6 +124,7 @@ export const deleteConversation = async (req, res) => {
       return res.status(403).json({ message: 'Not authorized to delete this conversation' });
     }
 
+    await Message.deleteMany({ conversationId: conversation._id });
     await conversation.deleteOne();
     res.json({ message: 'Conversation deleted successfully' });
   } catch (error) {

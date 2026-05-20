@@ -105,6 +105,11 @@ const onlineUsers = new Map();
 io.on('connection', async (socket) => {
   const userId = socket.user._id.toString();
   onlineUsers.set(userId, socket.id);
+
+  // Send current online users immediately so new clients don't render stale offline states.
+  socket.emit('onlineUsersSnapshot', {
+    userIds: Array.from(onlineUsers.keys()),
+  });
   
   console.log(`User connected: ${socket.user.username} (${socket.user.role})`);
 
@@ -182,6 +187,7 @@ io.on('connection', async (socket) => {
     socket.to(conversationId).emit('stopTypingIndicator', {
       conversationId,
       userId: socket.user._id,
+      username: socket.user.username,
     });
   });
 

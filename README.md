@@ -1,130 +1,147 @@
 # Worknoon Chat Backend
 
-Real-time chat backend for the Worknoon eCommerce platform, built with Node.js, Express, MongoDB, and Socket.IO.
+Express + MongoDB + Socket.IO backend for the Worknoon real-time chat platform.
 
-## Technologies
+## Stack
 
-- **Node.js** with ES modules
-- **Express.js** — REST API server
-- **MongoDB** with Mongoose — Data persistence
-- **Socket.IO** — Real-time WebSocket messaging
-- **JWT** — Authentication & authorization
-- **bcrypt** — Password hashing
-- **Multer** — File upload handling
+- Node.js (ES modules)
+- Express
+- MongoDB + Mongoose
+- Socket.IO
+- JWT + bcryptjs
+- Multer (upload endpoint)
 
-## Features
+## Implemented Features
 
-- JWT-based authentication (register/login)
-- Role-based access control (admin, agent, customer, designer, merchant)
-- Real-time messaging via Socket.IO with JWT-protected connections
-- Conversation CRUD with WooCommerce product/order context
-- File upload with mimetype validation (images, documents)
-- Online presence tracking
-- Typing indicators
-- Unread message counters
-- Auto-seeded test accounts for sandbox testing
+- Auth: register, login, profile
+- WordPress user sync endpoint with shared secret
+- Role model: admin, agent, customer, designer, merchant
+- Admin-only users listing and admin-only role updates
+- Conversations (create/list/get/delete)
+- Messages (send/list/mark-read)
+- Realtime events: presence, typing, new messages, conversation updates, read receipts
+- Upload endpoint for image/document files
 
-## Project Structure
+## ACL Summary
 
-```
+- `GET /api/auth/users`: admin only
+- `PATCH /api/auth/users/:id/role`: admin only
+- Self profile update cannot change role
+- Register always creates `customer`
+
+## Project Layout
+
+```text
 src/
-├── config/
-│   └── db.js              # Mongoose connection
-├── controllers/
-│   ├── auth.js            # Register, login, profile, users
-│   ├── conversation.js    # Conversation CRUD
-│   └── message.js         # Message CRUD & read status
-├── middleware/
-│   └── auth.js            # JWT guard & role checker
-├── models/
-│   ├── User.js            # User schema with roles
-│   ├── Conversation.js    # Conversations with context
-│   └── Message.js         # Messages with file types
-├── routes/
-│   ├── auth.js
-│   ├── conversation.js
-│   ├── message.js
-│   └── upload.js
-└── server.js              # Express + Socket.IO entry point
+	config/db.js
+	controllers/
+		auth.js
+		conversation.js
+		message.js
+	middleware/auth.js
+	models/
+		User.js
+		Conversation.js
+		Message.js
+	routes/
+		auth.js
+		conversation.js
+		message.js
+		upload.js
+	server.js
 ```
 
-## Setup
+## Local Development
 
-### Prerequisites
+### 1) Start MongoDB
 
-- Node.js 18+
-- Docker & Docker Compose
-
-### Installation
+The included Compose file only starts MongoDB.
 
 ```bash
-# Install dependencies
+docker compose -f docker-compose.yml up -d
+```
+
+### 2) Run API server
+
+```bash
 npm install
-
-# Start MongoDB
-docker compose up -d
-
-# Start the server
 npm run dev
 ```
 
-The server runs on `http://localhost:3001`.
+API base: `http://localhost:3001`
 
-### Default Test Accounts
+## Environment Variables
 
-All accounts use password: `Password123!`
+- `PORT` (default `3001`)
+- `MONGO_URI`
+- `JWT_SECRET`
+- `FRONTEND_URL` (default `http://localhost:3000`)
+- `WORDPRESS_SYNC_SECRET` (default `worknoon-wordpress-dev-secret`)
 
-| Email | Role |
-|---|---|
-| admin@worknoon.com | admin |
-| agent@worknoon.com | agent |
-| customer@worknoon.com | customer |
-| designer@worknoon.com | designer |
-| merchant@worknoon.com | merchant |
+## Seed Accounts
 
-## API Endpoints
+Server seeds test users when DB is empty.
+
+Password for seeded users: `Password123!`
+
+- `admin@worknoon.com`
+- `agent@worknoon.com`
+- `customer@worknoon.com`
+- `designer@worknoon.com`
+- `merchant@worknoon.com`
+
+## REST Endpoints
 
 ### Auth
-- `POST /api/auth/register` — Create account
-- `POST /api/auth/login` — Authenticate
-- `GET /api/auth/profile` — Get current user (protected)
-- `PUT /api/auth/profile` — Update profile (protected)
-- `GET /api/auth/users` — List all users except self (protected)
+
+- `POST /api/auth/register`
+- `POST /api/auth/login`
+- `POST /api/auth/wordpress-sync`
+- `GET /api/auth/profile` (protected)
+- `PUT /api/auth/profile` (protected)
+- `GET /api/auth/users` (protected, admin)
+- `PATCH /api/auth/users/:id/role` (protected, admin)
 
 ### Conversations
-- `POST /api/conversations` — Create/find conversation (protected)
-- `GET /api/conversations` — List user's conversations (protected)
-- `GET /api/conversations/:id` — Get single conversation (protected)
-- `DELETE /api/conversations/:id` — Delete conversation (protected)
+
+- `POST /api/conversations` (protected)
+- `GET /api/conversations` (protected)
+- `GET /api/conversations/:id` (protected)
+- `DELETE /api/conversations/:id` (protected)
 
 ### Messages
-- `POST /api/messages` — Send message (protected)
-- `GET /api/messages/:conversationId` — Get conversation messages (protected)
-- `PUT /api/messages/:conversationId/read` — Mark as read (protected)
+
+- `POST /api/messages` (protected)
+- `GET /api/messages/:conversationId` (protected)
+- `PUT /api/messages/:conversationId/read` (protected)
 
 ### Upload
-- `POST /api/upload` — Upload file (protected, multipart)
 
-## Socket.IO Events
+- `POST /api/upload` (protected, multipart)
 
-Connect with `{ auth: { token: "<jwt>" } }`.
+## Socket Events
 
-**Client → Server:** `joinRoom`, `leaveRoom`, `sendMessage`, `typing`, `stopTyping`
-**Server → Client:** `userPresence`, `messageReceived`, `conversationUpdated`, `typingIndicator`, `stopTypingIndicator`
+Auth handshake:
 
-## Challenges
+```json
+{ "auth": { "token": "<jwt>" } }
+```
 
-- **JWT-protected WebSocket connections** — Socket.IO middleware validates JWT before allowing connections, ensuring the same auth guarantees as REST endpoints.
-- **Real-time unread counters** — Map-based unread counts in MongoDB that increment/decrement atomically as messages are sent and read.
-- **Presence synchronization** — Online status tracked both in-memory (Map) and persisted to MongoDB, broadcast to all connected clients.
+Client to server:
 
-## Demo
+- `joinRoom`
+- `leaveRoom`
+- `sendMessage`
+- `typing`
+- `stopTyping`
 
-> **Video walkthrough coming soon.** Record a 5-10 minute Loom/YouTube video covering:
-> 1. Starting MongoDB + the server
-> 2. Registering a user via `POST /api/auth/register`
-> 3. Logging in and fetching conversations
-> 4. Real-time messaging with Socket.IO
-> 5. Admin-only endpoints
->
-> Replace this block with: `[📺 Demo Video](https://your-link-here)`
+Server to client:
+
+- `onlineUsersSnapshot`
+- `userPresence`
+- `messageReceived`
+- `conversationUpdated`
+- `messagesRead`
+- `typingIndicator`
+- `stopTypingIndicator`
+
